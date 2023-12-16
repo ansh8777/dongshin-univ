@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>동신대학교 사물인터넷학과 찐막</title>
+    <script type="text/javascript" src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpClientId=4i2qbbvpg9"></script>
+</head>
+
+<body>
+    <!-- 지도를 표시할 영역 -->
+    <div id="map" style="width:2100px;height:900px;"></div>
+
+    <script>
+        // 네이버 지도 초기화
+        var map = new naver.maps.Map('map', {
+            center: new naver.maps.LatLng(35.0497132, 126.7180061), // 초기 중심 좌표
+            zoom: 18 // 초기 줌 레벨
+        });
+
+        // Thingspeak 채널 정보
+        var thingspeakChannel = 'https://api.thingspeak.com/channels/2361685/feeds.json';
+
+        // 이전 데이터를 저장할 변수
+        var previousData = null;
+
+        // 이전 마커를 저장할 배열
+        var previousMarkers = [];
+
+        // 이동 경로를 저장할 배열
+        var pathCoordinates = [];
+
+        // 이동 경로를 나타낼 선 객체
+        var polyline = new naver.maps.Polyline({
+            map: map,
+            path: pathCoordinates,
+            strokeColor: 'red', // 선 색상을 빨간색으로 설정
+            strokeWeight: 3 // 선 두께 설정
+        });
+
+        // 마커 최대 개수
+        var maxMarkers = 100;
+
+        // 인포윈도우 생성
+        var infowindow = new naver.maps.InfoWindow({
+            content: ''
+        });
+
+        // 주기적으로 데이터 갱신
+        function updateData() {
+            fetch(thingspeakChannel + '?results=' + maxMarkers)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 이전 데이터와 현재 데이터 비교
+                    if (JSON.stringify(data) === JSON.stringify(previousData)) {
+                        // 데이터가 같으면 갱신하지 않음
+                        console.log('Data is the same. Not updating.');
+                        return;
+                    }
+
+                    // 이전 마커 삭제
+                    for (var i = 0; i < previousMarkers.length; i++) {
+                        previousMarkers[i].setMap(null);
+                    }
+
+                    // 초기화
+                    previousMarkers = [];
+                    pathCoordinates = [];
+                    polyline.setPath(pathCoordinates);
+
+                    // 마커 및 인포윈도우 생성
+                    for (var i = 0; i < data.feeds.length; i++) {
+                        var currentData = data.feeds[i];
+                        var latitude = parseFloat(currentData.field1);
+                        var longitude = parseFloat(currentData.field2);
+
+                        // 현재 마커 생성
+                        var currentMarker = new naver.maps.Marker({
+                            position: new naver.maps.LatLng(latitude, longitude),
+                            map: map,
+                            icon: i === data.feeds.length - 1 ? 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/green-dot.png',
+                            zIndex: i === data.feeds.length - 1 ? 1 : 0 // Set higher zIndex for the latest marker
+                        });
+
+                        // 클릭 이벤트 추가
+                        naver.maps.Event.addListener(currentMarker, 'click', (function (marker, data) {
+                            return function () {
+                                // 측정 시간 가져오기 (Thingspeak의 "created_at" 필드 기준)
+                                var measurementTime = new Date(data.created_at).toLocaleTimeString();
+
+                                // 온도와 습도 소수점 2자리, 미세먼지 소수점 1자리, 나머지는 소수점 없애기
+                                var temperature = parseFloat(data.field3).toFixed(2);
+                                var humidity = parseFloat(data.field4).toFixed(2);
+                                var pm10 = parseFloat(data.field5).toFixed(1);
+                                var pm25 = parseFloat(data.field6).toFixed(1);
+                                var tvoc = parseInt(data.field7);
+                                var nox = parseInt(data.field8);
+
+                                // 인포윈도우 내용 설정
+                                infowindow.setContent(
+                                    '<div>' +
+                                    '<p>온도: ' + temperature + '°C</p>' +
+                                    '<p>습도: ' + humidity + '%</p>' +
+                                    '<p>미세먼지 (PM10): ' + pm10 + ' µg/m³</p>' +
+                                    '<p>초미세먼지 (PM2.5): ' + pm25 + ' µg/m³</p>' +
+                                    '<p>TVOC: ' + tvoc + ' index</p>' +
+                                    '<p>NOx: ' + nox + ' index</p>' +
+                                    '<p>측정 시간: ' + measurementTime + '</p>' +
+                                    '</div>'
+                                );
+
+                                // 인포윈도우 열기
+                                infowindow.open(map, marker);
+                            };
+                        })(currentMarker, currentData));
+
+                        // 파란색 마커인 경우 자동으로 인포윈도우 열기
+                        if (i === data.feeds.length - 1) {
+                            infowindow.open(map, currentMarker);
+                        }
+
+                        // 현재 마커 배열에 추가
+                        previousMarkers.push(currentMarker);
+
+                        // 이동 경로에 좌표 추가
+                        pathCoordinates.push(new naver.maps.LatLng(latitude, longitude));
+                        polyline.setPath(pathCoordinates);
+                    }
+
+                    // 현재 데이터를 이전 데이터로 저장
+                    previousData = data;
+                })
+                .catch(error => console.error('Error fetching Thingspeak data:', error));
+        }
+
+        // 페이지 로드 후 최초 데이터 갱신
+        updateData();
+
+        // 5초마다 데이터 갱신
+        setInterval(updateData, 5000);
+    </script>
+</body>
+
+</html>
