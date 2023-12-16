@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ThingSpeak & Google Maps</title>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEWTXG1EjdJg8zjy3l2XBUoIJN5w0k8aw&callback=initMap" async defer></script>
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <style>
+    #map {
+      height: 900px;
+      width: 2100px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map;
+    var markers = [];
+    var autoUpdateInterval;
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: {lat: 35.0497132, lng: 126.7180061}, // 초기 지도 중앙 위치 (대한민국 부산)
+        zoom: 18
+      });
+      updateMapData(); // 페이지 로드 후 처음 한 번 데이터 업데이트
+      autoUpdateInterval = setInterval(updateMapData, 5000); // 5초마다 데이터 업데이트
+
+      // 이벤트 리스너 추가: 지도를 이동하거나 확대/축소할 때 발생하는 이벤트
+      google.maps.event.addListener(map, 'idle', function() {
+        // 사용자가 지도를 이동했을 때, 자동 업데이트 중지
+        clearInterval(autoUpdateInterval);
+      });
+    }
+
+    function updateMapData() {
+      var channelID = 2361685;
+      var apiKey = '1Q6TKHQMVR50K9NY';
+      var url = 'https://api.thingspeak.com/channels/' + channelID + '/feeds.json?api_key=' + apiKey;
+
+      var center = map.getCenter(); // 현재 지도의 중심 좌표
+      var zoom = map.getZoom(); // 현재 지도의 확대 수준
+
+      $.getJSON(url, function(data) {
+        // Clear existing markers
+        for (var i = 0; i < markers.length; i++) {
+          markers[i].setMap(null);
+        }
+        markers = [];
+
+        var feeds = data.feeds;
+        for (var i = 0; i < feeds.length; i++) {
+          var feed = feeds[i];
+          var latLng = new google.maps.LatLng(parseFloat(feed.field1), parseFloat(feed.field2));
+
+          // Use blue marker for the latest data, red for the previous ones
+          var markerColor = (i === 0) ? 'blue' : 'red';
+
+          var marker = new google.maps.Marker({
+            position: latLng,
+            map: map,
+            title: '온도: ' + feed.field3 + '°C, 습도: ' + feed.field4 + '%',
+            icon: 'http://maps.google.com/mapfiles/ms/icons/' + markerColor + '-dot.png'
+          });
+
+          var contentString = '<div>' +
+            '<p>시간: ' + feed.created_at + '</p>' +
+            '<p>온도: ' + feed.field3 + '°C</p>' +
+            '<p>습도: ' + feed.field4 + '%</p>' +
+            '<p>PM10: ' + feed.field5 + '</p>' +
+            '<p>PM2.5: ' + feed.field6 + '</p>' +
+            '<p>TVOC: ' + feed.field7 + '</p>' +
+            '<p>NOx: ' + feed.field8 + '</p>' +
+            '</div>';
+
+          var infowindow = new google.maps.InfoWindow({
+            content: contentString
+          });
+
+          // Add marker to the markers array
+          markers.push(marker);
+
+          marker.addListener('click', function() {
+            infowindow.open(map, this);
+          });
+        }
+
+        // Set the map center and zoom level back to the original values
+        map.setCenter(center);
+        map.setZoom(zoom);
+      });
+    }
+  </script>
+</body>
+</html>
