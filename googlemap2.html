@@ -70,7 +70,7 @@
             });
 
             var infowindow = new google.maps.InfoWindow({
-              content: '<div><b>온도:</b> ' + temperature + '°C<br><b>습도:</b> ' + humidity + '%<br><b>PM10:</b> ' + pm10 + ' ppm<br><b>PM2.5:</b> ' + pm25 + ' ppm<br><b>TVOC:</b> ' + tvoc + ' index<br><b>NOx:</b> ' + nox + ' index<br><b>측정 시간:</b> ' + feed.created_at + '</div>'
+              content: '<div><b>온도:</b> ' + temperature + '°C<br><b>습도:</b> ' + humidity + '%<br><b>PM10:</b> ' + pm10 + ' μg/m³<br><b>PM2.5:</b> ' + pm25 + ' μg/m³<br><b>TVOC:</b> ' + tvoc + ' index<br><b>NOx:</b> ' + nox + ' index<br><b>측정 시간:</b> ' + feed.created_at + '</div>'
             });
 
             addMarkerClickListener(marker, infowindow);
