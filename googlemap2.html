@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ThingSpeak & Google Maps</title>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEWTXG1EjdJg8zjy3l2XBUoIJN5w0k8aw&callback=initMap" async defer></script>
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <style>
+    #map {
+      height: 900px;
+      width: 2100px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map;
+    var markers = [];
+    var polylinePath = []; // 새로운 배열을 추가하여 폴리라인 경로 저장
+    var autoUpdateInterval;
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: {lat: 35.0497132, lng: 126.7180061},
+        zoom: 18
+      });
+      updateMapData();
+      autoUpdateInterval = setInterval(updateMapData, 5000);
+
+      google.maps.event.addListener(map, 'idle', function() {
+        clearInterval(autoUpdateInterval);
+      });
+    }
+
+    function updateMapData() {
+      var channelID = 2361685;
+      var apiKey = '1Q6TKHQMVR50K9NY';
+      var url = 'https://api.thingspeak.com/channels/' + channelID + '/feeds.json?api_key=' + apiKey;
+
+      var center = map.getCenter();
+      var zoom = map.getZoom();
+
+      $.getJSON(url, function(data) {
+        for (var i = 0; i < markers.length; i++) {
+          markers[i].setMap(null);
+        }
+        markers = [];
+
+        // 기존의 폴리라인을 지우기
+        if (polylinePath.length > 0) {
+          for (var i = 0; i < polylinePath.length; i++) {
+            polylinePath[i].setMap(null);
+          }
+          polylinePath = [];
+        }
+
+        var feeds = data.feeds;
+        for (var i = 0; i < feeds.length; i++) {
+          var feed = feeds[i];
+          var latLng = new google.maps.LatLng(parseFloat(feed.field1), parseFloat(feed.field2));
+          var markerColor = (i === 0) ? 'blue' : 'red';
+
+          var marker = new google.maps.Marker({
+            position: latLng,
+            map: map,
+            title: '온도: ' + feed.field3 + '°C, 습도: ' + feed.field4 + '%',
+            icon: 'http://maps.google.com/mapfiles/ms/icons/' + markerColor + '-dot.png'
+          });
+
+          // 마커를 마커 배열에 추가
+          markers.push(marker);
+
+          // 마커 위치를 폴리라인 경로 배열에 추가
+          polylinePath.push(latLng);
+
+          marker.addListener('click', function() {
+            infowindow.open(map, this);
+          });
+        }
+
+        // 폴리라인 그리기
+        var polyline = new google.maps.Polyline({
+          path: polylinePath,
+          geodesic: true,
+          strokeColor: '#FF0000',
+          strokeOpacity: 1.0,
+          strokeWeight: 2
+        });
+
+        // 폴리라인을 지도에 추가
+        polyline.setMap(map);
+
+        map.setCenter(center);
+        map.setZoom(zoom);
+      });
+    }
+  </script>
+</body>
+</html>
