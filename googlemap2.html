@@ -16,18 +16,20 @@
   <script>
     var map;
     var markers = [];
-    var polylinePath = []; // 새로운 배열을 추가하여 폴리라인 경로 저장
+    var polyline;
     var autoUpdateInterval;
 
     function initMap() {
       map = new google.maps.Map(document.getElementById('map'), {
-        center: {lat: 35.0497132, lng: 126.7180061},
+        center: {lat: 35.0497132, lng: 126.7180061}, // 초기 지도 중앙 위치 (대한민국 부산)
         zoom: 18
       });
-      updateMapData();
-      autoUpdateInterval = setInterval(updateMapData, 5000);
+      updateMapData(); // 페이지 로드 후 처음 한 번 데이터 업데이트
+      autoUpdateInterval = setInterval(updateMapData, 5000); // 5초마다 데이터 업데이트
 
+      // 이벤트 리스너 추가: 지도를 이동하거나 확대/축소할 때 발생하는 이벤트
       google.maps.event.addListener(map, 'idle', function() {
+        // 사용자가 지도를 이동했을 때, 자동 업데이트 중지
         clearInterval(autoUpdateInterval);
       });
     }
@@ -37,59 +39,82 @@
       var apiKey = '1Q6TKHQMVR50K9NY';
       var url = 'https://api.thingspeak.com/channels/' + channelID + '/feeds.json?api_key=' + apiKey;
 
-      var center = map.getCenter();
-      var zoom = map.getZoom();
+      var center = map.getCenter(); // 현재 지도의 중심 좌표
+      var zoom = map.getZoom(); // 현재 지도의 확대 수준
 
       $.getJSON(url, function(data) {
+        // 기존 마커 및 폴리라인 제거
         for (var i = 0; i < markers.length; i++) {
           markers[i].setMap(null);
         }
         markers = [];
 
-        // 기존의 폴리라인을 지우기
-        if (polylinePath.length > 0) {
-          for (var i = 0; i < polylinePath.length; i++) {
-            polylinePath[i].setMap(null);
-          }
-          polylinePath = [];
+        if (polyline) {
+          polyline.setMap(null);
         }
 
         var feeds = data.feeds;
+        var polylineCoords = [];
+
         for (var i = 0; i < feeds.length; i++) {
           var feed = feeds[i];
           var latLng = new google.maps.LatLng(parseFloat(feed.field1), parseFloat(feed.field2));
+
+          // 최신 데이터에는 파란색 마커, 이전 데이터에는 빨간색 마커 사용
           var markerColor = (i === 0) ? 'blue' : 'red';
+
+          // Format temperature, humidity, and PM values
+          var temperature = parseFloat(feed.field3).toFixed(3);
+          var humidity = parseFloat(feed.field4).toFixed(2);
+          var pm10 = Math.round(parseFloat(feed.field5));
+          var pm25 = Math.round(parseFloat(feed.field6));
+          var tvoc = Math.round(parseFloat(feed.field7));
+          var nox = Math.round(parseFloat(feed.field8));
 
           var marker = new google.maps.Marker({
             position: latLng,
             map: map,
-            title: '온도: ' + feed.field3 + '°C, 습도: ' + feed.field4 + '%',
+            title: '온도: ' + temperature + '°C, 습도: ' + humidity + '%',
             icon: 'http://maps.google.com/mapfiles/ms/icons/' + markerColor + '-dot.png'
           });
 
-          // 마커를 마커 배열에 추가
-          markers.push(marker);
+          var contentString = '<div>' +
+            '<p>시간: ' + feed.created_at + '</p>' +
+            '<p>온도: ' + temperature + ' °C</p>' +
+            '<p>습도: ' + humidity + ' %</p>' +
+            '<p>PM10: ' + pm10 + ' ppm</p>' +
+            '<p>PM2.5: ' + pm25 + ' ppm</p>' +
+            '<p>TVOC: ' + tvoc + ' Index</p>' +
+            '<p>NOx: ' + nox + ' Index</p>' +
+            '</div>';
 
-          // 마커 위치를 폴리라인 경로 배열에 추가
-          polylinePath.push(latLng);
+          var infowindow = new google.maps.InfoWindow({
+            content: contentString
+          });
+
+          markers.push(marker);
 
           marker.addListener('click', function() {
             infowindow.open(map, this);
           });
+
+          // 폴리라인 좌표에 마커 위치 추가
+          polylineCoords.push(latLng);
         }
 
-        // 폴리라인 그리기
-        var polyline = new google.maps.Polyline({
-          path: polylinePath,
+        // 모든 마커를 연결하는 폴리라인 생성
+        polyline = new google.maps.Polyline({
+          path: polylineCoords,
           geodesic: true,
-          strokeColor: '#FF0000',
+          strokeColor: '#FF0000', // 빨간색 선
           strokeOpacity: 1.0,
           strokeWeight: 2
         });
 
-        // 폴리라인을 지도에 추가
+        // 지도에 폴리라인 추가
         polyline.setMap(map);
 
+        // 지도 중심과 확대 수준을 원래 값으로 설정
         map.setCenter(center);
         map.setZoom(zoom);
       });
