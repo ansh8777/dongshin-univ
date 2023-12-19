@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>ThingSpeak & Google Maps</title>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEWTXG1EjdJg8zjy3l2XBUoIJN5w0k8aw&callback=initMap" async defer></script>
-  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Maps with Thingspeak Data</title>
   <style>
     #map {
       height: 900px;
@@ -13,111 +13,117 @@
 </head>
 <body>
   <div id="map"></div>
+
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEWTXG1EjdJg8zjy3l2XBUoIJN5w0k8aw&callback=initMap" async defer></script>
   <script>
     var map;
     var markers = [];
-    var polyline;
-    var autoUpdateInterval;
+    var infoWindows = [];
 
     function initMap() {
       map = new google.maps.Map(document.getElementById('map'), {
-        center: {lat: 35.0497132, lng: 126.7180061}, // 초기 지도 중앙 위치 (대한민국 부산)
+        center: {lat: 35.0184445, lng: 126.7788198},
         zoom: 18
       });
-      updateMapData(); // 페이지 로드 후 처음 한 번 데이터 업데이트
-      autoUpdateInterval = setInterval(updateMapData, 5000); // 5초마다 데이터 업데이트
 
-      // 이벤트 리스너 추가: 지도를 이동하거나 확대/축소할 때 발생하는 이벤트
-      google.maps.event.addListener(map, 'idle', function() {
-        // 사용자가 지도를 이동했을 때, 자동 업데이트 중지
-        clearInterval(autoUpdateInterval);
+      // Initial data load
+      loadDataAndUpdateMap();
+
+      // Set interval to update data every 5 seconds
+      setInterval(loadDataAndUpdateMap, 5000);
+    }
+
+    function loadDataAndUpdateMap() {
+      $.getJSON('https://api.thingspeak.com/channels/2361685/feeds.json?api_key=1Q6TKHQMVR50K9NY', function(data) {
+        if (data.feeds && data.feeds.length > 0) {
+          // Clear existing markers and infoWindows
+          clearMarkers();
+
+          // Find the index of the most recent data
+          var latestIndex = findLatestIndex(data.feeds);
+
+          for (var i = 0; i < data.feeds.length; i++) {
+            var feed = data.feeds[i];
+            var lat = parseFloat(feed.field1);
+            var lng = parseFloat(feed.field2);
+            var temperature = parseFloat(feed.field3);
+            var humidity = parseFloat(feed.field4);
+            var pm10 = parseFloat(feed.field5);
+            var pm25 = parseFloat(feed.field6);
+            var tvoc = parseFloat(feed.field7);
+            var nox = parseFloat(feed.field8);
+            var color = (i === latestIndex) ? 'blue' : 'red';
+
+            var marker = new google.maps.Marker({
+              position: {lat: lat, lng: lng},
+              map: map,
+              title: '측정 위치',
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 7,
+                fillColor: color,
+                fillOpacity: 1,
+                strokeWeight: 1,
+                strokeColor: 'black'
+              }
+            });
+
+            var infowindow = new google.maps.InfoWindow({
+              content: '<div><b>온도:</b> ' + temperature + '°C<br><b>습도:</b> ' + humidity + '%<br><b>PM10:</b> ' + pm10 + ' ppm<br><b>PM2.5:</b> ' + pm25 + ' ppm<br><b>TVOC:</b> ' + tvoc + ' index<br><b>NOx:</b> ' + nox + ' index<br><b>측정 시간:</b> ' + feed.created_at + '</div>'
+            });
+
+            addMarkerClickListener(marker, infowindow);
+            markers.push(marker);
+            infoWindows.push(infowindow);
+          }
+
+          var line = new google.maps.Polyline({
+            path: markers.map(marker => marker.getPosition()),
+            geodesic: true,
+            strokeColor: 'red',
+            strokeOpacity: 1.0,
+            strokeWeight: 2
+          });
+
+          line.setMap(map);
+
+          // Open the infowindow of the most recent marker
+          infoWindows[latestIndex].open(map, markers[latestIndex]);
+        }
       });
     }
 
-    function updateMapData() {
-      var channelID = 2361685;
-      var apiKey = '1Q6TKHQMVR50K9NY';
-      var url = 'https://api.thingspeak.com/channels/' + channelID + '/feeds.json?api_key=' + apiKey;
-
-      var center = map.getCenter(); // 현재 지도의 중심 좌표
-      var zoom = map.getZoom(); // 현재 지도의 확대 수준
-
-      $.getJSON(url, function(data) {
-        // 기존 마커 및 폴리라인 제거
-        for (var i = 0; i < markers.length; i++) {
-          markers[i].setMap(null);
-        }
-        markers = [];
-
-        if (polyline) {
-          polyline.setMap(null);
-        }
-
-        var feeds = data.feeds;
-        var polylineCoords = [];
-
-        for (var i = 0; i < feeds.length; i++) {
-          var feed = feeds[i];
-          var latLng = new google.maps.LatLng(parseFloat(feed.field1), parseFloat(feed.field2));
-
-          // 최신 데이터에는 파란색 마커, 이전 데이터에는 빨간색 마커 사용
-          var markerColor = (i === 0) ? 'blue' : 'red';
-
-          // Format temperature, humidity, and PM values
-          var temperature = parseFloat(feed.field3).toFixed(3);
-          var humidity = parseFloat(feed.field4).toFixed(2);
-          var pm10 = Math.round(parseFloat(feed.field5));
-          var pm25 = Math.round(parseFloat(feed.field6));
-          var tvoc = Math.round(parseFloat(feed.field7));
-          var nox = Math.round(parseFloat(feed.field8));
-
-          var marker = new google.maps.Marker({
-            position: latLng,
-            map: map,
-            title: '온도: ' + temperature + '°C, 습도: ' + humidity + '%',
-            icon: 'http://maps.google.com/mapfiles/ms/icons/' + markerColor + '-dot.png'
-          });
-
-          var contentString = '<div>' +
-            '<p>시간: ' + feed.created_at + '</p>' +
-            '<p>온도: ' + temperature + ' °C</p>' +
-            '<p>습도: ' + humidity + ' %</p>' +
-            '<p>PM10: ' + pm10 + ' ppm</p>' +
-            '<p>PM2.5: ' + pm25 + ' ppm</p>' +
-            '<p>TVOC: ' + tvoc + ' Index</p>' +
-            '<p>NOx: ' + nox + ' Index</p>' +
-            '</div>';
-
-          var infowindow = new google.maps.InfoWindow({
-            content: contentString
-          });
-
-          markers.push(marker);
-
-          marker.addListener('click', function() {
-            infowindow.open(map, this);
-          });
-
-          // 폴리라인 좌표에 마커 위치 추가
-          polylineCoords.push(latLng);
-        }
-
-        // 모든 마커를 연결하는 폴리라인 생성
-        polyline = new google.maps.Polyline({
-          path: polylineCoords,
-          geodesic: true,
-          strokeColor: '#FF0000', // 빨간색 선
-          strokeOpacity: 1.0,
-          strokeWeight: 2
-        });
-
-        // 지도에 폴리라인 추가
-        polyline.setMap(map);
-
-        // 지도 중심과 확대 수준을 원래 값으로 설정
-        map.setCenter(center);
-        map.setZoom(zoom);
+    function addMarkerClickListener(marker, infowindow) {
+      marker.addListener('click', function() {
+        infowindow.open(map, marker);
       });
+    }
+
+    function findLatestIndex(feeds) {
+      var latestTime = new Date(0);
+      var latestIndex = 0;
+
+      for (var i = 0; i < feeds.length; i++) {
+        var feedTime = new Date(feeds[i].created_at);
+        if (feedTime > latestTime) {
+          latestTime = feedTime;
+          latestIndex = i;
+        }
+      }
+
+      return latestIndex;
+    }
+
+    function clearMarkers() {
+      // Clear existing markers from the map
+      for (var i = 0; i < markers.length; i++) {
+        markers[i].setMap(null);
+      }
+
+      // Clear the arrays
+      markers = [];
+      infoWindows = [];
     }
   </script>
 </body>
